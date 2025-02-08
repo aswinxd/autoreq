@@ -122,13 +122,21 @@ async def approve_join_request(client, message: Message):
 
     try:
         add_group(chat.id)
-        await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
+        while True:
+            try:
+                await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
+                break  
+            except errors.FloodWait as e:
+                print(f"FloodWait error: Sleeping for {e.value} seconds...")
+                await asyncio.sleep(e.value) 
         await client.send_message(
             user.id,
             f"Hello {user.mention},\nWelcome to {chat.title}."
         )
+        
         add_user(user.id)
+
     except errors.PeerIdInvalid:
         print("User hasn't started the bot.")
     except Exception as e:
-        print(str(e))
+        print(f"Error: {str(e)}")
