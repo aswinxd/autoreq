@@ -37,7 +37,6 @@ class Database:
         await self.col.update_one({'id': int(id)}, {'$set': {'session': session}})
 
     async def get_session(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return user['session']
-
+    user = await self.col.find_one({'id': int(id)})
+    return user['session'] if user else None 
 db = Database(DB_URI, DB_NAME)
