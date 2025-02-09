@@ -80,7 +80,7 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, BadRequest
 
 BATCH_SIZE = 10  
-DELAY_BETWEEN_BATCHES = 5  
+DELAY_BETWEEN_BATCHES = 1  
 
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
