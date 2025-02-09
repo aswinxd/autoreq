@@ -115,28 +115,57 @@ async def accept(client, message):
     except ValueError:
         await message.reply("Please enter a valid channel or group ID.")
 
+import logging
+import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pyrogram.errors import FloodWait, BadRequest
+
+BATCH_SIZE = 10  # Adjust batch size if needed
+
 @Client.on_chat_join_request(filters.group | filters.channel & ~filters.private)
-async def approve_join_request(client, message: Message):
-    chat = message.chat
-    user = message.from_user
+async def handle_new_join_request(client, message: Message):
+    """Starts the approval process when a new join request is received."""
+    chat_id = message.chat.id
+    logging.info(f"New join request detected in {chat_id}. Starting batch approval...")
+    await approve_requests(client, chat_id)
 
-    try:
-        add_group(chat.id)
-        while True:
-            try:
-                await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
-                break  
-            except errors.FloodWait as e:
-                print(f"FloodWait error: Sleeping for {e.value} seconds...")
-                await asyncio.sleep(e.value) 
-        await client.send_message(
-            user.id,
-            f"Hello {user.mention},\nWelcome to {chat.title}."
-        )
-        
-        add_user(user.id)
+async def approve_requests(client, chat_id):
+    """Approves join requests in batches while handling errors properly."""
+    logging.info(f"Starting approval process for chat {chat_id}")
 
-    except errors.PeerIdInvalid:
-        print("User hasn't started the bot.")
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    while True:
+        try:
+            async for request in client.get_chat_join_requests(chat_id, limit=BATCH_SIZE):
+                if request is None:
+                    logging.info("No more pending join requests.")
+                    await client.send_message(chat_id, "All pending join requests have been approved.")
+                    break
+
+                try:
+                    await client.approve_chat_join_request(chat_id, request.user.id)
+                    logging.info(f"Approved user: {request.user.id}")
+                except BadRequest as e:
+                    if "USER_CHANNELS_TOO_MUCH" in str(e):
+                        logging.warning(f"Cannot approve {request.user.id}: User has joined too many channels.")
+                        continue
+                    elif "INPUT_USER_DEACTIVATED" in str(e):
+                        logging.warning(f"Cannot approve {request.user.id}: User account is deleted.")
+                        continue
+                    else:
+                        raise e  
+
+                await asyncio.sleep(1)  # Prevent hitting rate limits
+
+        except FloodWait as e:
+            logging.warning(f"FloodWait triggered: Sleeping for {e.value} seconds.")
+            await asyncio.sleep(e.value)  
+        except BadRequest as e:
+            logging.error(f"BadRequest: {str(e)}")
+            if "HIDE_REQUESTER_MISSING" in str(e):
+                logging.info("No more visible requests. Stopping process.")
+                break
+        except Exception as e:
+            logging.error(f"Unexpected error: {str(e)}")
+            break
+
