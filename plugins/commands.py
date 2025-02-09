@@ -20,7 +20,7 @@ async def start_message(c, m):
 
         if m.chat.type == enums.ChatType.PRIVATE:
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ᴄʜᴀᴛ", url=f"https://t.me/{c.me.username}?startgroup=true")]
+                [InlineKeyboardButton("Add bot to your group / channel", url=f"https://t.me/{c.me.username}?startgroup=true")]
             ])
 
             await m.reply_text(
@@ -28,7 +28,7 @@ async def start_message(c, m):
                 "Key Features:\n"
                 "1. Automatically approve join requests in groups and channels.\n"
                 "2. Use /accept to accept all pending join requests.\n"
-                "3. Add me as an admin in your group or channel with full rights.\n",
+                "3. Add me as an admin in your group or channel with admin rights.\n",
                 reply_markup=keyboard
             )
 
@@ -57,7 +57,7 @@ async def chk(c, cb):
         await c.get_chat_member(CHID, cb.from_user.id)
         if cb.message.chat.type == enums.ChatType.PRIVATE:
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ᴄʜᴀᴛ", url=f"https://t.me/{c.me.username}?startgroup=true")]
+                [InlineKeyboardButton("", url=f"https://t.me/{c.me.username}?startgroup=true")]
             ])
 
             await cb.message.edit(
@@ -65,7 +65,8 @@ async def chk(c, cb):
                 "Key Features:\n"
                 "1. Automatically approve join requests in groups and channels.\n"
                 "2. Use /accept to accept all pending join requests.\n"
-                "3. Add me as an admin in your group or channel with full rights.\n",
+                "3. Add me as an admin in your group or channel with full rights.\n"
+                "4. Dont worry if the approving is stopped it is to avoid flood it will continue after some seconds.",
                 reply_markup=keyboard,
                 disable_web_page_preview=True
             )
@@ -79,8 +80,8 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait, BadRequest
 
-BATCH_SIZE = 10  
-DELAY_BETWEEN_BATCHES = 1  
+BATCH_SIZE = 1  
+DELAY_BETWEEN_BATCHES = 0.5  
 
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
@@ -120,40 +121,35 @@ async def accept(client, message):
     except ValueError:
         await message.reply("Please enter a valid channel or group ID.")
 
-
 async def approve_requests(client, chat_id, msg):
-    """Approves join requests in batches while handling errors properly."""
+    """Keeps approving join requests until no pending requests exist."""
     logging.info(f"Starting approval process for chat {chat_id}")
 
     while True:
         try:
             approved_count = 0
+            pending_requests = 0  # Track if there are still pending requests
 
             async for request in client.get_chat_join_requests(chat_id, limit=BATCH_SIZE):
-                if request is None:
-                    logging.info("No more pending join requests.")
-                    await msg.edit("All pending join requests have been approved.")
-                    return
+                pending_requests += 1  
 
                 try:
                     await client.approve_chat_join_request(chat_id, request.user.id)
                     approved_count += 1
                     logging.info(f"Approved user: {request.user.id}")
                 except BadRequest as e:
-                    if "USER_CHANNELS_TOO_MUCH" in str(e):
-                        continue
-                    elif "INPUT_USER_DEACTIVATED" in str(e):
+                    if "USER_CHANNELS_TOO_MUCH" in str(e) or "INPUT_USER_DEACTIVATED" in str(e):
                         continue
                     else:
                         raise e  
 
-                await asyncio.sleep(1)  
-
-            if approved_count == 0:
+                await asyncio.sleep(0.5)  
+            if pending_requests == 0: 
+                logging.info("No more pending join requests.")
                 await msg.edit("All pending join requests have been approved.")
                 return
 
-            logging.info(f"Waiting {DELAY_BETWEEN_BATCHES} seconds before processing the next batch...")
+            logging.info(f"Waiting {DELAY_BETWEEN_BATCHES} seconds before checking for more requests...")
             await asyncio.sleep(DELAY_BETWEEN_BATCHES)  
 
         except FloodWait as e:
