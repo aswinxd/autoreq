@@ -81,7 +81,7 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, BadRequest
 
 BATCH_SIZE = 1  
-DELAY_BETWEEN_BATCHES = 0.5  
+DELAY_BETWEEN_BATCHES = 1 
 
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
@@ -128,7 +128,7 @@ async def approve_requests(client, chat_id, msg):
     while True:
         try:
             approved_count = 0
-            pending_requests = 0  # Track if there are still pending requests
+            pending_requests = 0  
 
             async for request in client.get_chat_join_requests(chat_id, limit=BATCH_SIZE):
                 pending_requests += 1  
@@ -143,23 +143,29 @@ async def approve_requests(client, chat_id, msg):
                     else:
                         raise e  
 
-                await asyncio.sleep(0.5)  
-            if pending_requests == 0: 
+                await asyncio.sleep(1)  
+
+            if pending_requests == 0:  
                 logging.info("No more pending join requests.")
                 await msg.edit("All pending join requests have been approved.")
                 return
 
-            logging.info(f"Waiting {DELAY_BETWEEN_BATCHES} seconds before checking for more requests...")
+            logging.info(f"Approved {approved_count} users. Checking again in {DELAY_BETWEEN_BATCHES} seconds...")
+            await msg.edit(f"Approved {approved_count} users so far... Continuing in {DELAY_BETWEEN_BATCHES} seconds.")
             await asyncio.sleep(DELAY_BETWEEN_BATCHES)  
 
         except FloodWait as e:
             logging.warning(f"FloodWait triggered: Sleeping for {e.value} seconds.")
+            await msg.edit(f"Telegram rate limit reached. Waiting {e.value} seconds...")
             await asyncio.sleep(e.value)  
+
         except BadRequest as e:
-            logging.error(f"BadRequest: {str(e)}")
+            logging.error(f"⚠️ BadRequest: {str(e)}")
             if "HIDE_REQUESTER_MISSING" in str(e):
-                logging.info("No more visible requests. Stopping process.")
+                logging.info("⚠No more visible requests. Stopping process.")
+                await msg.edit("No more visible requests. Process stopped.")
                 break
         except Exception as e:
             logging.error(f"Unexpected error: {str(e)}")
+            await msg.edit(f"Unexpected error: {str(e)}")
             break
