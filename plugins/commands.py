@@ -80,14 +80,15 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait, BadRequest
 
-BATCH_SIZE = 1  
-DELAY_BETWEEN_BATCHES = 1 
+BATCH_SIZE = 10  
+DELAY_BETWEEN_BATCHES = 5  
 
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
+    """Handles the /accept command and starts processing join requests."""
     user_data = await db.get_session(message.from_user.id)
     if user_data is None:
-        await message.reply("To accept pending requests, please log in first using /login.")
+        await message.reply("⚠️ Please log in first using /login.")
         return
 
     try:
@@ -98,32 +99,35 @@ async def accept(client, message):
             api_id=API_ID
         )
         await acc.connect()
-    except:
-        return await message.reply("Your login session has expired. Please log in again using /login.")
+    except Exception as e:
+        logging.error(f"❌ Error connecting session: {str(e)}")
+        return await message.reply("⚠️ Your login session has expired. Please log in again using /login.")
 
     chat_id_msg = await client.ask(
         message.chat.id,
-        "Please enter the channel or group ID where you want to accept join requests."
+        "📢 Enter the **channel/group ID** where you want to approve join requests:"
     )
 
     try:
         chat_id = int(chat_id_msg.text)
 
         try:
-            await acc.get_chat(chat_id)
-        except:
-            await message.reply("Error: Ensure your logged-in account is an admin with the necessary rights.")
+            await acc.get_chat(chat_id)  
+        except Exception as e:
+            logging.error(f"❌ Error accessing chat: {str(e)}")
+            await message.reply("⚠️ Error: Ensure your account is an admin with approval rights.")
             return
 
-        msg = await message.reply("Processing join requests...")
+        msg = await message.reply("🔄 Processing join requests...")
         await approve_requests(acc, chat_id, msg)
 
     except ValueError:
-        await message.reply("Please enter a valid channel or group ID.")
+        await message.reply("⚠️ Please enter a **valid** channel or group ID.")
+
 
 async def approve_requests(client, chat_id, msg):
-    """Keeps approving join requests until no pending requests exist."""
-    logging.info(f"Starting approval process for chat {chat_id}")
+    """Approves join requests in batches while ensuring logs & error handling."""
+    logging.info(f"🚀 Starting approval process for chat {chat_id}")
 
     while True:
         try:
@@ -131,40 +135,43 @@ async def approve_requests(client, chat_id, msg):
             pending_requests = 0  
 
             async for request in client.get_chat_join_requests(chat_id, limit=BATCH_SIZE):
-                pending_requests += 1  
+                if request:
+                    pending_requests += 1  
 
-                try:
-                    await client.approve_chat_join_request(chat_id, request.user.id)
-                    approved_count += 1
-                    logging.info(f"Approved user: {request.user.id}")
-                except BadRequest as e:
-                    if "USER_CHANNELS_TOO_MUCH" in str(e) or "INPUT_USER_DEACTIVATED" in str(e):
-                        continue
-                    else:
-                        raise e  
+                    try:
+                        await client.approve_chat_join_request(chat_id, request.user.id)
+                        approved_count += 1
+                        logging.info(f"✅ Approved user: {request.user.id}")
+                    except BadRequest as e:
+                        if "USER_CHANNELS_TOO_MUCH" in str(e) or "INPUT_USER_DEACTIVATED" in str(e):
+                            logging.warning(f"⚠️ Skipping user {request.user.id} - {str(e)}")
+                            continue  
+                        else:
+                            raise e  
 
-                await asyncio.sleep(1)  
+                    await asyncio.sleep(1)  # Prevent rate limits
 
             if pending_requests == 0:  
                 logging.info("No more pending join requests.")
-                await msg.edit("All pending join requests have been approved.")
+                await msg.edit("All pending join requests **have been approved**.")
                 return
 
-            logging.info(f"Approved {approved_count} users. Checking again in {DELAY_BETWEEN_BATCHES} seconds...")
+            logging.info(f" Approved {approved_count} users. Waiting {DELAY_BETWEEN_BATCHES} seconds before next batch...")
             await asyncio.sleep(DELAY_BETWEEN_BATCHES)  
 
         except FloodWait as e:
-            logging.warning(f"FloodWait triggered: Sleeping for {e.value} seconds.")
-            await msg.edit(f"Telegram rate limit reached. Waiting {e.value} seconds...")
+            logging.warning(f"🚨 FloodWait: Sleeping for {e.value} seconds.")
+            await msg.edit(f"🚨 Telegram rate limit reached. Waiting {e.value} seconds...")
             await asyncio.sleep(e.value)  
 
         except BadRequest as e:
             logging.error(f"⚠️ BadRequest: {str(e)}")
             if "HIDE_REQUESTER_MISSING" in str(e):
-                logging.info("No more visible requests. Stopping process.")
-                await msg.edit("No more visible requests. Process stopped.")
+                logging.info("⚠️ No more visible requests. Stopping process.")
+                await msg.edit("⚠️ No more visible requests. Process stopped.")
                 break
+
         except Exception as e:
-            logging.error(f"Unexpected error: {str(e)}")
-            await msg.edit(f"Unexpected error: {str(e)}")
+            logging.error(f"🔥 Unexpected error: {str(e)}")
+            await msg.edit(f"🔥 Unexpected error: {str(e)}")
             break
