@@ -73,6 +73,15 @@ async def chk(c, cb):
     except UserNotParticipant:
         await cb.answer("You have not joined the required channel. Please join and try again.", show_alert=True)
 
+import logging
+import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pyrogram.errors import FloodWait, BadRequest
+
+BATCH_SIZE = 10  
+DELAY_BETWEEN_BATCHES = 5  
+
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
     user_data = await db.get_session(message.from_user.id)
@@ -106,44 +115,29 @@ async def accept(client, message):
             return
 
         msg = await message.reply("Processing join requests...")
-        try:
-            await acc.approve_all_chat_join_requests(chat_id)
-            await msg.edit("Successfully accepted all join requests.")
-        except:
-            await msg.edit("An error occurred during the process.")
+        await approve_requests(acc, chat_id, msg)
 
     except ValueError:
         await message.reply("Please enter a valid channel or group ID.")
 
-import logging
-import asyncio
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from pyrogram.errors import FloodWait, BadRequest
 
-BATCH_SIZE = 10  # Adjust batch size if needed
-
-@Client.on_chat_join_request(filters.group | filters.channel & ~filters.private)
-async def handle_new_join_request(client, message: Message):
-    """Starts the approval process when a new join request is received."""
-    chat_id = message.chat.id
-    logging.info(f"New join request detected in {chat_id}. Starting batch approval...")
-    await approve_requests(client, chat_id)
-
-async def approve_requests(client, chat_id):
+async def approve_requests(client, chat_id, msg):
     """Approves join requests in batches while handling errors properly."""
     logging.info(f"Starting approval process for chat {chat_id}")
 
     while True:
         try:
+            approved_count = 0
+
             async for request in client.get_chat_join_requests(chat_id, limit=BATCH_SIZE):
                 if request is None:
                     logging.info("No more pending join requests.")
-                    await client.send_message(chat_id, "All pending join requests have been approved.")
-                    break
+                    await msg.edit("All pending join requests have been approved.")
+                    return
 
                 try:
                     await client.approve_chat_join_request(chat_id, request.user.id)
+                    approved_count += 1
                     logging.info(f"Approved user: {request.user.id}")
                 except BadRequest as e:
                     if "USER_CHANNELS_TOO_MUCH" in str(e):
@@ -155,7 +149,14 @@ async def approve_requests(client, chat_id):
                     else:
                         raise e  
 
-                await asyncio.sleep(1)  # Prevent hitting rate limits
+                await asyncio.sleep(1)  
+
+            if approved_count == 0:
+                await msg.edit("All pending join requests have been approved.")
+                return
+
+            logging.info(f"Waiting {DELAY_BETWEEN_BATCHES} seconds before processing the next batch...")
+            await asyncio.sleep(DELAY_BETWEEN_BATCHES)  
 
         except FloodWait as e:
             logging.warning(f"FloodWait triggered: Sleeping for {e.value} seconds.")
@@ -168,4 +169,3 @@ async def approve_requests(client, chat_id):
         except Exception as e:
             logging.error(f"Unexpected error: {str(e)}")
             break
-
