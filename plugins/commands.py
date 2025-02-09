@@ -151,7 +151,6 @@ async def approve_requests(client, chat_id, msg):
                 return
 
             logging.info(f"Approved {approved_count} users. Checking again in {DELAY_BETWEEN_BATCHES} seconds...")
-            await msg.edit(f"Approved {approved_count} users so far... Continuing in {DELAY_BETWEEN_BATCHES} seconds.")
             await asyncio.sleep(DELAY_BETWEEN_BATCHES)  
 
         except FloodWait as e:
@@ -162,7 +161,7 @@ async def approve_requests(client, chat_id, msg):
         except BadRequest as e:
             logging.error(f"⚠️ BadRequest: {str(e)}")
             if "HIDE_REQUESTER_MISSING" in str(e):
-                logging.info("⚠No more visible requests. Stopping process.")
+                logging.info("No more visible requests. Stopping process.")
                 await msg.edit("No more visible requests. Process stopped.")
                 break
         except Exception as e:
